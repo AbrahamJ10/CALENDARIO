@@ -1,20 +1,18 @@
 import { useCallback, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { Header } from '../../components/Header';
 import { SectionTitle } from '../../components/ui';
 import { notify } from '../../components/Toast';
-import { api, getSettings, saveSettings } from '../../lib/api';
+import { api } from '../../lib/api';
 import { requestPermission, scheduledCount, sendTest } from '../../lib/notifications';
 import { useAgenda } from '../../lib/store';
 import { colors, shadow, font } from '../../lib/theme';
 
 export default function Settings() {
-  const { refresh, events } = useAgenda();
-  const [apiUrl, setApiUrl] = useState(getSettings().apiUrl);
-  const [apiKey, setApiKey] = useState(getSettings().apiKey);
+  const { refresh, events, error } = useAgenda();
   const [status, setStatus] = useState({ perm: null, exact: null, count: 0 });
   const [testing, setTesting] = useState(false);
 
@@ -28,19 +26,15 @@ export default function Settings() {
   }, []);
 
   useFocusEffect(useCallback(() => {
-    setApiUrl(getSettings().apiUrl);
-    setApiKey(getSettings().apiKey);
     loadStatus();
   }, [loadStatus]));
 
-  const save = async () => {
+  const test = async () => {
     setTesting(true);
-    await saveSettings({ apiUrl, apiKey });
     try {
       await api.health();
-      await api.list();
+      await refresh();
       notify('Conectado con la base de datos');
-      refresh();
     } catch (err) {
       notify(err.message, 'error');
     } finally {
@@ -78,18 +72,16 @@ export default function Settings() {
           Cada actividad te avisa según los recordatorios que elijas (por ejemplo, un día antes y una hora antes). Si activas “Insistir”, te seguirá avisando durante el día (de 7:00 a 22:00) hasta que la marques como realizada, directamente desde la notificación con el botón ✅ Realizado.
         </Text>
 
-        <SectionTitle>Servidor</SectionTitle>
+        <SectionTitle>Base de datos</SectionTitle>
         <View style={styles.card}>
-          <Text style={styles.label}>Dirección del servidor</Text>
-          <TextInput value={apiUrl} onChangeText={setApiUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" style={styles.input} placeholder="http://192.168.1.5:3000" placeholderTextColor={colors.faint} />
-          <Text style={styles.label}>Clave de acceso</Text>
-          <TextInput value={apiKey} onChangeText={setApiKey} autoCapitalize="none" autoCorrect={false} secureTextEntry style={styles.input} placeholder="API_KEY" placeholderTextColor={colors.faint} />
-          <Pressable style={[styles.button, testing && { opacity: 0.6 }]} onPress={save} disabled={testing}>
-            <Ionicons name="link" size={16} color="#fff" />
-            <Text style={styles.buttonText}>{testing ? 'Probando…' : 'Guardar y probar conexión'}</Text>
+          <Row icon="cloud" label="Neon (PostgreSQL)" ok={error ? false : true} />
+          <Row icon="albums" label="Actividades guardadas" value={String(events.length)} />
+          <Pressable style={[styles.button, testing && { opacity: 0.6 }]} onPress={test} disabled={testing}>
+            <Ionicons name="sync" size={16} color="#fff" />
+            <Text style={styles.buttonText}>{testing ? 'Probando…' : 'Probar conexión y sincronizar'}</Text>
           </Pressable>
         </View>
-        <Text style={styles.help}>{events.length} actividades guardadas en tu base de datos Neon.</Text>
+        <Text style={styles.help}>Tus actividades se guardan en la nube y también en el celular, así puedes verlas aunque no tengas internet.</Text>
       </View>
     </ScrollView>
   );

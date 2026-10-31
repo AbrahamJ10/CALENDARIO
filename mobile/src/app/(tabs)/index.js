@@ -55,7 +55,7 @@ export default function Today() {
         <View style={styles.body}>
           {error && events.length === 0 && (
             <View style={styles.errorBox}>
-              <Text style={styles.errorText}>No se pudo conectar con el servidor. Revisa la dirección en Ajustes.</Text>
+              <Text style={styles.errorText}>No se pudo conectar. Revisa tu conexión a internet y desliza hacia abajo para reintentar.</Text>
             </View>
           )}
 

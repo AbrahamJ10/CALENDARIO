@@ -1,7 +1,7 @@
 import { createContext, createElement, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, loadSettings } from './api';
+import { api } from './api';
 import { rescheduleAll } from './notifications';
 
 const CACHE_KEY = 'agenda.events';
@@ -35,7 +35,6 @@ export function AgendaProvider({ children }) {
 
   useEffect(() => {
     (async () => {
-      await loadSettings();
       try {
         const cached = JSON.parse((await AsyncStorage.getItem(CACHE_KEY)) || '[]');
         eventsRef.current = cached;

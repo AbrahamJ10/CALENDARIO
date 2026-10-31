@@ -1,51 +1,53 @@
 # Agenda Pro
 
-Agenda profesional para el celular, con calendario, prioridades, categorías, actividades que se repiten y recordatorios insistentes que siguen sonando hasta que marcas la actividad como **realizada**.
+Agenda profesional para Android, con calendario, prioridades, categorías, actividades que se repiten y recordatorios insistentes que siguen sonando hasta que marcas la actividad como **realizada**.
 
-- `server/`: API en Node/Express conectada a PostgreSQL (Neon). La llave de la base de datos solo vive aquí.
-- `mobile/`: app en Expo (React Native) para Android/iOS.
+- `mobile/`: la app (Expo / React Native). Se instala como APK y se conecta directo a Neon por HTTPS.
+- `server/`: API opcional en Node/Express. La app ya no la necesita; también sirve para administrar la base con el usuario dueño.
 
 ## Recordatorios
 
-Cada actividad puede tener varios avisos (2 días antes, 1 día antes, 3 h, 1 h, 30, 15 o 5 min antes y a la hora).
-Con **Insistir** activado, después de la hora sigue avisando cada 15/30/60/120/180 min (solo de 7:00 a 22:00 y hasta 3 días)
+Cada actividad puede tener varios avisos: 2 días antes, 1 día antes, 3 h, 1 h, 30, 15 o 5 min antes y a la hora.
+Con **Insistir** activado, después de la hora te sigue avisando cada 15/30/60/120/180 min (solo de 7:00 a 22:00 y hasta 3 días)
 hasta que toques **✅ Realizado** en la notificación o en la app. **⏰ Recordar en 10 min** pospone el aviso.
+Los avisos se programan en el propio celular, así que suenan aunque no tengas internet.
 
-## Ejecutar en la PC
+## Base de datos
 
-```bash
-# 1. Servidor
-cd server
-npm install
-# crea server/.env con:
-#   DATABASE_URL=postgresql://...neon.tech/neondb?sslmode=verify-full&channel_binding=require
-#   API_KEY=una-clave-larga-secreta
-npm start
+La app usa el usuario de Neon `agenda_app`, que **solo** puede leer y escribir la tabla `events` (no puede crear ni borrar tablas).
+Su conexión va en `mobile/.env` (no se sube a GitHub):
 
-# 2. App (celular conectado por USB con depuración activada y Expo Go instalado)
+```
+EXPO_PUBLIC_DATABASE_URL=postgresql://agenda_app:CLAVE@ep-...-pooler....neon.tech/neondb?sslmode=require
+```
+
+La tabla `events` la crea `server/index.js` al iniciarse (`npm start` en `server/`, usando la llave de dueño en `server/.env`).
+
+## Compilar e instalar el APK
+
+Requisitos: Android Studio (SDK + JDK 21) y el celular con depuración USB activada.
+
+```powershell
 cd mobile
 npm install --legacy-peer-deps
-# crea mobile/.env con:
-#   EXPO_PUBLIC_API_URL=http://localhost:3000
-#   EXPO_PUBLIC_API_KEY=la-misma-clave-del-servidor
-adb reverse tcp:8081 tcp:8081
-adb reverse tcp:3000 tcp:3000
-npx expo start --localhost --android
+npx expo prebuild -p android
+cd android
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+.\gradlew.bat assembleRelease -PreactNativeArchitectures=arm64-v8a
+adb install -r app\build\outputs\apk\release\app-release.apk
 ```
 
-## Usarla sin la PC (servidor en la nube)
+El APK queda en `mobile/android/app/build/outputs/apk/release/app-release.apk`; también puedes pasarlo al celular y abrirlo para instalarlo.
 
-1. Sube este repositorio a GitHub (los archivos `.env` están ignorados y no se suben).
-2. En [render.com](https://render.com), elige **New → Blueprint**, conecta el repo y Render leerá `render.yaml`.
-3. Llena `DATABASE_URL` y `API_KEY` con los mismos valores de `server/.env`.
-4. En la app, ve a **Ajustes → Servidor**, pon la URL que te da Render (`https://agenda-pro-api.onrender.com`) y toca **Guardar y probar conexión**.
-
-## Instalar como app propia (APK)
+## Desarrollo (con recarga en vivo)
 
 ```bash
 cd mobile
-npx eas-cli@latest login
-npx eas-cli@latest build -p android --profile preview
+npx expo start
 ```
 
-Con eso obtienes un APK instalable que ya no necesita Expo Go.
+### Nota para Windows: rutas largas
+
+Si la compilación falla con `Filename longer than 260 characters`, compila desde una ruta corta (por ejemplo `C:\ap\m`)
+y usa ninja 1.12 o superior: copia `Sdk\cmake\3.22.1` a `C:\ap\cmake`, reemplaza `bin\ninja.exe` por el de
+[ninja-build v1.12.1](https://github.com/ninja-build/ninja/releases/tag/v1.12.1) y añade `cmake.dir=C\:\ap\cmake` a `android/local.properties`.
