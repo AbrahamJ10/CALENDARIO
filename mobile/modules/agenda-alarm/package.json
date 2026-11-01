@@ -1,0 +1,7 @@
+{
+  "name": "agenda-alarm",
+  "version": "1.0.0",
+  "description": "Alertas tipo llamada (pantalla completa + alarma) para Agenda Pro",
+  "main": "index.js",
+  "private": true
+}

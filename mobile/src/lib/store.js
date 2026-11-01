@@ -67,11 +67,8 @@ export function AgendaProvider({ children }) {
       commit(eventsRef.current.filter((e) => e.id !== id));
     },
     toggleDone: async (id, date) => upsertLocal(await api.toggle(id, date)),
-    markDone: async (id, date) => {
-      const ev = eventsRef.current.find((e) => e.id === id);
-      if (ev?.done_dates?.includes(date)) return ev;
-      return upsertLocal(await api.toggle(id, date));
-    },
+    markDone: async (id, date) => upsertLocal(await api.setDone(id, date)),
+    reschedule: () => rescheduleAll(eventsRef.current),
   };
 
   return createElement(Ctx.Provider, { value }, children);

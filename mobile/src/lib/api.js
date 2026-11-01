@@ -61,6 +61,13 @@ export const api = {
      WHERE id=$1 RETURNING *`,
     [id, ...clean(data)],
   ),
+  // Marca como hecha (sin desmarcar si ya lo estaba): lo usan las alertas
+  setDone: (id, date) => one(
+    `UPDATE events SET done_dates = CASE WHEN $2 = ANY(done_dates) THEN done_dates ELSE array_append(done_dates, $2) END,
+       updated_at=NOW()
+     WHERE id=$1 RETURNING *`,
+    [id, date],
+  ),
   remove: (id) => query('DELETE FROM events WHERE id=$1', [id]),
   // Marca o desmarca como hecha una ocurrencia concreta (fecha YYYY-MM-DD)
   toggle: (id, date) => one(

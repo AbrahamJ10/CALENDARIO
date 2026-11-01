@@ -3,6 +3,7 @@ import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { allOccurrences } from './recurrence';
 import { addDays, formatTime, relativeDay, reminderLabel } from './dates';
+import AgendaAlarm from '../../modules/agenda-alarm';
 
 export const CHANNEL_ID = 'recordatorios';
 export const CATEGORY_ID = 'agenda-recordatorio';
@@ -17,6 +18,23 @@ const NAG_DAYS = 3;
 const HORIZON_DAYS = 21;
 // iOS permite 64 notificaciones programadas; Android ~500 alarmas por app
 const MAX_SCHEDULED = Platform.OS === 'ios' ? 60 : 300;
+
+// Alertas tipo llamada (pantalla completa + sonido de alarma en bucle). Solo en el APK de Android.
+export const callModeAvailable = Platform.OS === 'android' && !!AgendaAlarm;
+const CALL_MODE_KEY = 'agenda.callMode';
+
+export async function getCallMode() {
+  if (!callModeAvailable) return false;
+  try {
+    return (await AsyncStorage.getItem(CALL_MODE_KEY)) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export async function setCallMode(on) {
+  await AsyncStorage.setItem(CALL_MODE_KEY, on ? 'on' : 'off');
+}
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -128,6 +146,19 @@ export function rescheduleAll(events) {
     const plan = [...(await pendingSnoozes(events)), ...planReminders(events)]
       .sort((a, b) => a.at - b.at)
       .slice(0, MAX_SCHEDULED);
+
+    if (await getCallMode()) {
+      const now = new Date();
+      const activeKeys = allOccurrences(events, addDays(now, -NAG_DAYS - 1), addDays(now, HORIZON_DAYS))
+        .filter((o) => !o.done)
+        .map((o) => `${o.event.id}|${o.key}`);
+      const alarms = plan.map(({ at, content: c }) => ({
+        at: at.getTime(), title: c.title, body: c.body, eventId: c.data.eventId, date: c.data.date,
+      }));
+      return AgendaAlarm.scheduleAll(JSON.stringify(alarms), activeKeys);
+    }
+    AgendaAlarm?.cancelAll();
+
     for (const item of plan) {
       await Notifications.scheduleNotificationAsync({
         content: item.content,
@@ -157,10 +188,14 @@ export async function snooze(notification, minutes = 10) {
 }
 
 export async function sendTest() {
+  if (await getCallMode()) return AgendaAlarm.test(5);
   await Notifications.scheduleNotificationAsync({
     content: { title: '🔔 Agenda Pro', body: 'Las notificaciones funcionan correctamente.', sound: 'default' },
     trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 3, channelId: CHANNEL_ID },
   });
 }
 
-export const scheduledCount = async () => (await Notifications.getAllScheduledNotificationsAsync()).length;
+export async function scheduledCount() {
+  if (await getCallMode()) return AgendaAlarm.count();
+  return (await Notifications.getAllScheduledNotificationsAsync()).length;
+}

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
@@ -7,13 +7,14 @@ import { Header } from '../../components/Header';
 import { SectionTitle } from '../../components/ui';
 import { notify } from '../../components/Toast';
 import { api } from '../../lib/api';
-import { requestPermission, scheduledCount, sendTest } from '../../lib/notifications';
+import { callModeAvailable, getCallMode, requestPermission, scheduledCount, sendTest, setCallMode } from '../../lib/notifications';
+import AgendaAlarm from '../../../modules/agenda-alarm';
 import { useAgenda } from '../../lib/store';
 import { colors, shadow, font } from '../../lib/theme';
 
 export default function Settings() {
-  const { refresh, events, error } = useAgenda();
-  const [status, setStatus] = useState({ perm: null, exact: null, count: 0 });
+  const { refresh, events, error, reschedule } = useAgenda();
+  const [status, setStatus] = useState({ perm: null, exact: null, count: 0, call: false, fullScreen: true });
   const [testing, setTesting] = useState(false);
 
   const loadStatus = useCallback(async () => {
@@ -22,7 +23,9 @@ export default function Settings() {
     if (Platform.OS === 'android' && Notifications.getExactAlarmPermissionsAsync) {
       exact = (await Notifications.getExactAlarmPermissionsAsync().catch(() => ({ granted: null }))).granted;
     }
-    setStatus({ perm, exact, count: await scheduledCount() });
+    const call = await getCallMode();
+    const fullScreen = AgendaAlarm ? AgendaAlarm.canUseFullScreen() : true;
+    setStatus({ perm, exact, count: await scheduledCount(), call, fullScreen });
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -47,6 +50,20 @@ export default function Settings() {
     loadStatus();
   };
 
+  const toggleCall = async (on) => {
+    await setCallMode(on);
+    setStatus((s) => ({ ...s, call: on }));
+    await reschedule();
+    notify(on ? 'Las alertas llegarán como llamada' : 'Las alertas llegarán como notificación');
+    loadStatus();
+  };
+
+  const onTest = async () => {
+    await sendTest();
+    notify(status.call ? 'La alerta llegará en 5 segundos. Puedes bloquear el celular.' : 'Llegará en 3 segundos');
+    setTimeout(loadStatus, 6000);
+  };
+
   const askExact = async () => {
     await Notifications.requestExactAlarmPermissionsAsync?.().catch(() => Linking.openSettings());
     loadStatus();
@@ -58,18 +75,31 @@ export default function Settings() {
       <View style={styles.body}>
         <SectionTitle>Notificaciones</SectionTitle>
         <View style={styles.card}>
+          {callModeAvailable && (
+            <View style={styles.row}>
+              <View style={[styles.rowIcon, { backgroundColor: colors.dangerSoft }]}><Ionicons name="call" size={17} color={colors.danger} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowLabel}>Alertas tipo llamada</Text>
+                <Text style={styles.rowSub}>Pantalla completa y sonido de alarma hasta que respondas</Text>
+              </View>
+              <Switch value={status.call} onValueChange={toggleCall} trackColor={{ true: colors.primary }} thumbColor="#fff" />
+            </View>
+          )}
+          {status.call && !status.fullScreen && (
+            <Row icon="expand" label="Permitir pantalla completa" ok={false} action={['Permitir', () => { AgendaAlarm.openFullScreenSettings(); }]} />
+          )}
           <Row icon="notifications" label="Permiso de notificaciones" ok={status.perm} action={!status.perm ? ['Activar', askPerm] : null} />
           {Platform.OS === 'android' && (
             <Row icon="alarm" label="Alarmas exactas (avisos puntuales)" ok={status.exact} action={status.exact === false ? ['Permitir', askExact] : null} />
           )}
           <Row icon="time" label="Avisos programados" value={String(status.count)} />
-          <Pressable style={styles.button} onPress={async () => { await sendTest(); notify('Llegará en 3 segundos'); setTimeout(loadStatus, 4000); }}>
-            <Ionicons name="paper-plane" size={16} color="#fff" />
-            <Text style={styles.buttonText}>Enviar notificación de prueba</Text>
+          <Pressable style={styles.button} onPress={onTest}>
+            <Ionicons name={status.call ? 'call' : 'paper-plane'} size={16} color="#fff" />
+            <Text style={styles.buttonText}>{status.call ? 'Probar alerta tipo llamada' : 'Enviar notificación de prueba'}</Text>
           </Pressable>
         </View>
         <Text style={styles.help}>
-          Cada actividad te avisa según los recordatorios que elijas (por ejemplo, un día antes y una hora antes). Si activas “Insistir”, te seguirá avisando durante el día (de 7:00 a 22:00) hasta que la marques como realizada, directamente desde la notificación con el botón ✅ Realizado.
+          Cada actividad te avisa según los recordatorios que elijas (por ejemplo, un día antes y una hora antes). Si activas “Insistir”, te seguirá avisando durante el día (de 7:00 a 22:00) hasta que la marques como realizada. Con “Alertas tipo llamada” la alerta ocupa toda la pantalla aunque el celular esté bloqueado y suena como alarma (incluso en silencio) hasta que toques ✅ Ya lo realicé o ⏰ Posponer.
         </Text>
 
         <SectionTitle>Base de datos</SectionTitle>
@@ -110,6 +140,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, borderRadius: 20, padding: 16, ...shadow },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
   rowIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  rowSub: { ...font(400), fontSize: 12, color: colors.muted, marginTop: 2 },
   rowLabel: { flex: 1, fontSize: 15, ...font(600), color: colors.text },
   rowValue: { fontSize: 15, ...font(800), color: colors.primary },
   smallBtn: { backgroundColor: colors.primary, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
