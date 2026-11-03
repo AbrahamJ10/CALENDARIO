@@ -9,6 +9,7 @@ import {
 import { AgendaProvider, useAgenda } from '../lib/store';
 import { ACTION_DONE, ACTION_SNOOZE, setupNotifications, snooze } from '../lib/notifications';
 import { ToastHost, notify } from '../components/Toast';
+import { Welcome } from '../components/Welcome';
 import { colors } from '../lib/theme';
 
 function NotificationResponses() {
@@ -47,6 +48,14 @@ function NotificationResponses() {
   return null;
 }
 
+/** La primera vez (sin usuario en este celular) se pide el nombre antes de mostrar la agenda. */
+function UserGate({ children }) {
+  const { ready, user } = useAgenda();
+  if (!ready) return null;
+  if (!user) return <Welcome />;
+  return children;
+}
+
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
@@ -67,11 +76,14 @@ export default function RootLayout() {
   return (
     <AgendaProvider>
       <StatusBar style="light" />
-      <NotificationResponses />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="event/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-      </Stack>
+      <UserGate>
+        <NotificationResponses />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="event/[id]" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="users" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        </Stack>
+      </UserGate>
       <ToastHost />
     </AgendaProvider>
   );

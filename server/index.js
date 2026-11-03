@@ -36,6 +36,9 @@ async function migrate() {
     );
     CREATE INDEX IF NOT EXISTS events_start_idx ON events (start_at);
     ALTER TABLE events ADD COLUMN IF NOT EXISTS nag_every INTEGER NOT NULL DEFAULT 60;
+    -- Dueño de la agenda (nombre normalizado del usuario de la app)
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT '';
+    CREATE INDEX IF NOT EXISTS events_owner_start_idx ON events (owner, start_at);
   `);
 }
 

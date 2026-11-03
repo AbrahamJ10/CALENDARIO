@@ -4,6 +4,10 @@ import { neon } from '@neondatabase/serverless';
 const DATABASE_URL = process.env.EXPO_PUBLIC_DATABASE_URL;
 const sql = DATABASE_URL ? neon(DATABASE_URL) : null;
 
+// Usuario activo en este celular: cada consulta se limita a su agenda
+let owner = null;
+export const setOwner = (key) => { owner = key; };
+
 const CATEGORIES = ['trabajo', 'personal', 'reunion', 'salud', 'pago', 'estudio', 'otro'];
 const PRIORITIES = ['alta', 'media', 'baja'];
 const REPEATS = ['none', 'daily', 'weekly', 'monthly', 'yearly'];
@@ -33,6 +37,7 @@ function clean(body) {
 
 async function query(text, params) {
   if (!sql) throw new Error('Falta configurar la base de datos');
+  if (!owner) throw new Error('Elige un usuario');
   try {
     return await sql.query(text, params);
   } catch (err) {
@@ -49,31 +54,31 @@ const one = async (text, params) => {
 
 export const api = {
   health: () => query('SELECT 1 AS ok'),
-  list: () => query('SELECT * FROM events ORDER BY start_at'),
+  list: () => query('SELECT * FROM events WHERE owner=$1 ORDER BY start_at', [owner]),
   create: (data) => one(
-    `INSERT INTO events (title, description, location, category, priority, start_at, end_at, all_day, reminders, repeat, nag_every)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-    clean(data),
+    `INSERT INTO events (title, description, location, category, priority, start_at, end_at, all_day, reminders, repeat, nag_every, owner)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+    [...clean(data), owner],
   ),
   update: (id, data) => one(
     `UPDATE events SET title=$2, description=$3, location=$4, category=$5, priority=$6, start_at=$7, end_at=$8,
        all_day=$9, reminders=$10, repeat=$11, nag_every=$12, updated_at=NOW()
-     WHERE id=$1 RETURNING *`,
-    [id, ...clean(data)],
+     WHERE id=$1 AND owner=$13 RETURNING *`,
+    [id, ...clean(data), owner],
   ),
   // Marca como hecha (sin desmarcar si ya lo estaba): lo usan las alertas
   setDone: (id, date) => one(
     `UPDATE events SET done_dates = CASE WHEN $2 = ANY(done_dates) THEN done_dates ELSE array_append(done_dates, $2) END,
        updated_at=NOW()
-     WHERE id=$1 RETURNING *`,
-    [id, date],
+     WHERE id=$1 AND owner=$3 RETURNING *`,
+    [id, date, owner],
   ),
-  remove: (id) => query('DELETE FROM events WHERE id=$1', [id]),
+  remove: (id) => query('DELETE FROM events WHERE id=$1 AND owner=$2', [id, owner]),
   // Marca o desmarca como hecha una ocurrencia concreta (fecha YYYY-MM-DD)
   toggle: (id, date) => one(
     `UPDATE events SET done_dates = CASE WHEN $2 = ANY(done_dates) THEN array_remove(done_dates, $2) ELSE array_append(done_dates, $2) END,
        updated_at=NOW()
-     WHERE id=$1 RETURNING *`,
-    [id, date],
+     WHERE id=$1 AND owner=$3 RETURNING *`,
+    [id, date, owner],
   ),
 };

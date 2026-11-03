@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
 import { Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { Header } from '../../components/Header';
 import { SectionTitle } from '../../components/ui';
+import { Avatar } from '../../components/Welcome';
 import { notify } from '../../components/Toast';
 import { api } from '../../lib/api';
 import { callModeAvailable, getCallMode, requestPermission, scheduledCount, sendTest, setCallMode } from '../../lib/notifications';
@@ -13,7 +14,7 @@ import { useAgenda } from '../../lib/store';
 import { colors, shadow, font } from '../../lib/theme';
 
 export default function Settings() {
-  const { refresh, events, error, reschedule } = useAgenda();
+  const { refresh, events, error, reschedule, user, profiles } = useAgenda();
   const [status, setStatus] = useState({ perm: null, exact: null, count: 0, call: false, fullScreen: true });
   const [testing, setTesting] = useState(false);
 
@@ -73,6 +74,18 @@ export default function Settings() {
     <ScrollView contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
       <Header overline="Agenda Pro" title="Ajustes" />
       <View style={styles.body}>
+        <SectionTitle>Usuario</SectionTitle>
+        <Pressable onPress={() => router.push('/users')} style={({ pressed }) => [styles.card, styles.userCard, pressed && { opacity: 0.85 }]}>
+          {user && <Avatar profile={user} size={52} />}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.userName}>{user?.name}</Text>
+            <Text style={styles.rowSub}>
+              {profiles.list.length > 1 ? `${profiles.list.length} usuarios en este celular` : 'Agenda personal'}
+            </Text>
+          </View>
+          <View style={styles.smallBtn}><Text style={styles.smallBtnText}>Cambiar</Text></View>
+        </Pressable>
+
         <SectionTitle>Notificaciones</SectionTitle>
         <View style={styles.card}>
           {callModeAvailable && (
@@ -140,6 +153,8 @@ const styles = StyleSheet.create({
   card: { backgroundColor: colors.card, borderRadius: 20, padding: 16, ...shadow },
   row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, gap: 12 },
   rowIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  userCard: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  userName: { ...font(800), fontSize: 18, color: colors.text },
   rowSub: { ...font(400), fontSize: 12, color: colors.muted, marginTop: 2 },
   rowLabel: { flex: 1, fontSize: 15, ...font(600), color: colors.text },
   rowValue: { fontSize: 15, ...font(800), color: colors.primary },

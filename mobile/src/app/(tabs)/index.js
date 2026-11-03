@@ -8,7 +8,7 @@ import { addDays, formatLongDate, greeting, relativeDay, sameDay, startOfDay } f
 import { colors, font } from '../../lib/theme';
 
 export default function Today() {
-  const { events, syncing, refresh, error } = useAgenda();
+  const { events, syncing, refresh, error, user } = useAgenda();
   const now = new Date();
   const today = startOfDay(now);
 
@@ -33,7 +33,7 @@ export default function Today() {
         contentContainerStyle={{ paddingBottom: 110 }}
         refreshControl={<RefreshControl refreshing={syncing} onRefresh={refresh} colors={[colors.primary]} />}
       >
-        <Header overline={`${greeting()} 👋`} title={formatLongDate(now)}>
+        <Header overline={`${greeting()}, ${user?.name ?? ''} 👋`} title={formatLongDate(now)}>
           <View style={styles.progressCard}>
             <View style={{ flex: 1 }}>
               <Text style={styles.progressTitle}>
