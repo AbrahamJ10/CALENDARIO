@@ -5,10 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import * as Clipboard from 'expo-clipboard';
 import { Chip } from '../../components/ui';
 import { notify } from '../../components/Toast';
 import { useAgenda } from '../../lib/store';
-import { dayKey, formatShortDate, formatTime, fromKey, relativeDay } from '../../lib/dates';
+import { addDays, dayKey, formatShortDate, formatTime, fromKey, relativeDay } from '../../lib/dates';
+import { callPhone, copyText, hostOf, normalizeUrl, openMaps, openUrl, openWhatsApp, shareEvent, splitLinks } from '../../lib/links';
 import { CATEGORIES, NAG_OPTIONS, PRIORITIES, REMINDER_OPTIONS, REPEAT_OPTIONS, colors, shadow, font } from '../../lib/theme';
 
 function defaultStart(dateParam) {
@@ -20,23 +22,31 @@ function defaultStart(dateParam) {
 }
 
 export default function EventScreen() {
-  const { id, date } = useLocalSearchParams();
+  const { id, date, copyOf } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
-  const { getEvent, save, remove, toggleDone } = useAgenda();
+  const { getEvent, save, remove, toggleDone, setChecklist } = useAgenda();
   const isNew = id === 'new';
   const existing = isNew ? null : getEvent(id);
+  // "Duplicar" abre una actividad nueva con los datos de otra
+  const source = existing || (copyOf ? getEvent(copyOf) : null);
 
-  const [form, setForm] = useState(() => existing
+  const [form, setForm] = useState(() => source
     ? {
-        ...existing,
-        start: new Date(existing.start_at),
-        end: existing.end_at ? new Date(existing.end_at) : null,
+        ...source,
+        start: new Date(source.start_at),
+        end: source.end_at ? new Date(source.end_at) : null,
+        links: source.links || [],
+        checklist: isNew ? (source.checklist || []).map((c) => ({ ...c, done: false })) : source.checklist || [],
+        phone: source.phone || '',
       }
     : {
         title: '', description: '', location: '', category: 'personal', priority: 'media',
         start: defaultStart(date), end: null, all_day: false,
         reminders: [1440, 60, 0], nag_every: 60, repeat: 'none',
+        links: [], checklist: [], phone: '',
       });
+  const [newLink, setNewLink] = useState({ url: '', label: '' });
+  const [newStep, setNewStep] = useState('');
   const [saving, setSaving] = useState(false);
   const [iosPicker, setIosPicker] = useState(null);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -72,6 +82,65 @@ export default function EventScreen() {
     }
   };
 
+  /** Cambia el día manteniendo la hora (atajos Hoy / Mañana / Lunes / 1 semana). */
+  const setDay = (day) => {
+    const next = new Date(day);
+    next.setHours(form.start.getHours(), form.start.getMinutes(), 0, 0);
+    const duration = form.end ? form.end - form.start : null;
+    set({ start: next, end: duration != null ? new Date(next.getTime() + duration) : null });
+  };
+  const today = new Date();
+  const nextMonday = addDays(today, ((8 - today.getDay()) % 7) || 7);
+  const QUICK_DAYS = [
+    { label: 'Hoy', day: today },
+    { label: 'Mañana', day: addDays(today, 1) },
+    { label: 'Próx. lunes', day: nextMonday },
+    { label: 'En 1 semana', day: addDays(today, 7) },
+  ];
+
+  const addLink = () => {
+    const url = normalizeUrl(newLink.url);
+    if (!url) return notify('Ese enlace no es válido', 'error');
+    set({ links: [...form.links, { url, label: newLink.label.trim() }] });
+    setNewLink({ url: '', label: '' });
+  };
+
+  const pasteLink = async () => {
+    const text = (await Clipboard.getStringAsync()).trim();
+    if (!text) return notify('No hay nada copiado', 'error');
+    setNewLink((l) => ({ ...l, url: text }));
+  };
+
+  const copy = async (text, what = 'Enlace copiado') => {
+    await copyText(text);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    notify(what);
+  };
+
+  const open = async (url) => {
+    if (!(await openUrl(url))) notify('No se pudo abrir el enlace', 'error');
+  };
+
+  const addStep = () => {
+    if (!newStep.trim()) return;
+    set({ checklist: [...form.checklist, { text: newStep.trim(), done: false }] });
+    setNewStep('');
+  };
+
+  // En una actividad ya guardada, marcar un paso se guarda al momento
+  const toggleStep = async (i) => {
+    const checklist = form.checklist.map((c, j) => (j === i ? { ...c, done: !c.done } : c));
+    set({ checklist });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    if (!isNew) {
+      try {
+        await setChecklist(id, checklist);
+      } catch (err) {
+        notify(err.message, 'error');
+      }
+    }
+  };
+
   const toggleReminder = (v) =>
     set({ reminders: form.reminders.includes(v) ? form.reminders.filter((r) => r !== v) : [...form.reminders, v].sort((a, b) => b - a) });
 
@@ -88,6 +157,7 @@ export default function EventScreen() {
         category: form.category, priority: form.priority, start_at: start.toISOString(),
         end_at: form.all_day || !end ? null : end.toISOString(), all_day: form.all_day,
         reminders: form.reminders, nag_every: form.nag_every, repeat: form.repeat,
+        links: form.links, checklist: form.checklist, phone: form.phone,
       }, isNew ? undefined : id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       notify(isNew ? 'Actividad agendada' : 'Cambios guardados');
@@ -133,11 +203,19 @@ export default function EventScreen() {
         <Pressable onPress={() => router.back()} hitSlop={10} style={styles.iconBtn}>
           <Ionicons name="close" size={24} color={colors.text} />
         </Pressable>
-        <Text style={styles.topTitle}>{isNew ? 'Nueva actividad' : 'Editar actividad'}</Text>
+        <Text style={styles.topTitle}>{isNew ? (copyOf ? 'Duplicar actividad' : 'Nueva actividad') : 'Editar actividad'}</Text>
         {!isNew ? (
-          <Pressable onPress={onDelete} hitSlop={10} style={styles.iconBtn}>
-            <Ionicons name="trash-outline" size={22} color={colors.danger} />
-          </Pressable>
+          <View style={{ flexDirection: 'row' }}>
+            <Pressable onPress={() => shareEvent(existing, date ? fromKey(date) : new Date(existing.start_at))} hitSlop={6} style={styles.iconBtn}>
+              <Ionicons name="share-social-outline" size={22} color={colors.primary} />
+            </Pressable>
+            <Pressable onPress={() => router.replace({ pathname: '/event/[id]', params: { id: 'new', copyOf: id } })} hitSlop={6} style={styles.iconBtn}>
+              <Ionicons name="copy-outline" size={21} color={colors.primary} />
+            </Pressable>
+            <Pressable onPress={onDelete} hitSlop={6} style={styles.iconBtn}>
+              <Ionicons name="trash-outline" size={22} color={colors.danger} />
+            </Pressable>
+          </View>
         ) : <View style={styles.iconBtn} />}
       </View>
 
@@ -163,11 +241,35 @@ export default function EventScreen() {
           />
           <View style={styles.divider} />
           <Field icon="location-outline">
-            <TextInput value={form.location} onChangeText={(t) => set({ location: t })} placeholder="Lugar (opcional)" placeholderTextColor={colors.faint} style={styles.input} />
+            <View style={styles.inlineRow}>
+              <TextInput value={form.location} onChangeText={(t) => set({ location: t })} placeholder="Lugar (opcional)" placeholderTextColor={colors.faint} style={[styles.input, { flex: 1 }]} />
+              {!!form.location.trim() && <MiniBtn icon="map" label="Mapa" onPress={() => openMaps(form.location)} />}
+            </View>
+          </Field>
+          <Field icon="call-outline">
+            <View style={styles.inlineRow}>
+              <TextInput value={form.phone} onChangeText={(t) => set({ phone: t })} placeholder="Teléfono de contacto (opcional)" placeholderTextColor={colors.faint} style={[styles.input, { flex: 1 }]} keyboardType="phone-pad" />
+              {form.phone.replace(/\D/g, '').length >= 6 && (
+                <>
+                  <MiniBtn icon="call" onPress={() => callPhone(form.phone)} />
+                  <MiniBtn icon="logo-whatsapp" color="#16A34A" onPress={() => openWhatsApp(form.phone)} />
+                </>
+              )}
+            </View>
           </Field>
           <Field icon="document-text-outline">
             <TextInput value={form.description} onChangeText={(t) => set({ description: t })} placeholder="Notas (opcional)" placeholderTextColor={colors.faint} style={[styles.input, { minHeight: 44 }]} multiline />
           </Field>
+          {splitLinks(form.description).some((p) => p.url) && (
+            <View style={[styles.chips, { marginTop: 6 }]}>
+              {splitLinks(form.description).filter((p) => p.url).map((p, i) => (
+                <Pressable key={i} onPress={() => open(p.url)} onLongPress={() => copy(p.url)} style={styles.noteLink}>
+                  <Ionicons name="link" size={13} color={colors.primary} />
+                  <Text style={styles.noteLinkText} numberOfLines={1}>{hostOf(p.url)}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
 
         <Text style={styles.label}>Fecha y hora</Text>
@@ -176,6 +278,11 @@ export default function EventScreen() {
             <Ionicons name="sunny-outline" size={20} color={colors.primary} />
             <Text style={styles.switchLabel}>Todo el día</Text>
             <Switch value={form.all_day} onValueChange={(v) => set({ all_day: v })} trackColor={{ true: colors.primary }} thumbColor="#fff" />
+          </View>
+          <View style={[styles.chips, { marginTop: 4 }]}>
+            {QUICK_DAYS.map((q) => (
+              <Chip key={q.label} label={q.label} active={dayKey(q.day) === dayKey(form.start)} onPress={() => setDay(q.day)} />
+            ))}
           </View>
           <View style={styles.pickRow}>
             <PickBtn icon="calendar-outline" text={formatShortDate(form.start)} onPress={() => pick('start', 'date')} />
@@ -212,6 +319,85 @@ export default function EventScreen() {
           <Chips options={REPEAT_OPTIONS} isActive={(v) => form.repeat === v} onPress={(v) => set({ repeat: v })} />
         </View>
 
+        <Text style={styles.label}>🔗 Enlaces</Text>
+        <View style={styles.card}>
+          {form.links.map((l, i) => (
+            <View key={i} style={[styles.linkRow, i > 0 && styles.rowBorder]}>
+              <Pressable onPress={() => open(l.url)} style={styles.linkMain}>
+                <View style={styles.linkIcon}><Ionicons name="globe-outline" size={18} color={colors.primary} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.linkTitle} numberOfLines={1}>{l.label || hostOf(l.url)}</Text>
+                  <Text style={styles.linkUrl} numberOfLines={1}>{l.url}</Text>
+                </View>
+              </Pressable>
+              <MiniBtn icon="open-outline" onPress={() => open(l.url)} />
+              <MiniBtn icon="copy-outline" onPress={() => copy(l.url)} />
+              <MiniBtn icon="close" color={colors.danger} onPress={() => set({ links: form.links.filter((_, j) => j !== i) })} />
+            </View>
+          ))}
+          <View style={[styles.addBox, form.links.length > 0 && { marginTop: 12 }]}>
+            <View style={styles.inlineRow}>
+              <TextInput
+                value={newLink.url}
+                onChangeText={(t) => setNewLink((l) => ({ ...l, url: t }))}
+                placeholder="Pega o escribe un enlace (https://…)"
+                placeholderTextColor={colors.faint}
+                style={[styles.input, { flex: 1 }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+              />
+              <MiniBtn icon="clipboard-outline" label="Pegar" onPress={pasteLink} />
+            </View>
+            {!!newLink.url.trim() && (
+              <>
+                <TextInput
+                  value={newLink.label}
+                  onChangeText={(t) => setNewLink((l) => ({ ...l, label: t }))}
+                  placeholder="Nombre del enlace (opcional, ej. Bases SIS)"
+                  placeholderTextColor={colors.faint}
+                  style={styles.input}
+                />
+                <Pressable onPress={addLink} style={styles.addBtn}>
+                  <Ionicons name="add" size={18} color="#fff" />
+                  <Text style={styles.addBtnText}>Agregar enlace</Text>
+                </Pressable>
+              </>
+            )}
+          </View>
+        </View>
+
+        <Text style={styles.label}>☑️ Lista de pasos</Text>
+        <View style={styles.card}>
+          {form.checklist.length > 0 && (
+            <Text style={styles.hint}>{form.checklist.filter((c) => c.done).length} de {form.checklist.length} pasos hechos</Text>
+          )}
+          {form.checklist.map((c, i) => (
+            <View key={i} style={styles.stepRow}>
+              <Pressable onPress={() => toggleStep(i)} hitSlop={8} style={[styles.stepCheck, c.done && styles.stepCheckOn]}>
+                {c.done && <Ionicons name="checkmark" size={16} color="#fff" />}
+              </Pressable>
+              <Text style={[styles.stepText, c.done && styles.stepDone]}>{c.text}</Text>
+              <Pressable onPress={() => set({ checklist: form.checklist.filter((_, j) => j !== i) })} hitSlop={8}>
+                <Ionicons name="close" size={18} color={colors.faint} />
+              </Pressable>
+            </View>
+          ))}
+          <View style={styles.inlineRow}>
+            <TextInput
+              value={newStep}
+              onChangeText={setNewStep}
+              placeholder="Agregar paso (ej. Escanear DNI)"
+              placeholderTextColor={colors.faint}
+              style={[styles.input, { flex: 1 }]}
+              returnKeyType="done"
+              onSubmitEditing={addStep}
+              blurOnSubmit={false}
+            />
+            {!!newStep.trim() && <MiniBtn icon="add" label="Añadir" onPress={addStep} />}
+          </View>
+        </View>
+
         <Text style={styles.label}>🔔 Recordatorios</Text>
         <View style={styles.card}>
           <Text style={styles.hint}>Elige todos los avisos que quieras antes de la actividad.</Text>
@@ -221,7 +407,7 @@ export default function EventScreen() {
           <Chips options={NAG_OPTIONS} isActive={(v) => form.nag_every === v} onPress={(v) => set({ nag_every: v })} color={colors.warning} />
         </View>
 
-        <Text style={styles.label}>Categoría</Text>
+        <Text style={styles.label}>Tipo de actividad</Text>
         <View style={styles.chips}>
           {Object.entries(CATEGORIES).map(([k, c]) => (
             <Chip key={k} label={c.label} icon={c.icon} color={c.color} active={form.category === k} onPress={() => set({ category: k })} />
@@ -252,6 +438,15 @@ function Field({ icon, children }) {
       <Ionicons name={icon} size={20} color={colors.muted} style={{ marginTop: 12 }} />
       <View style={{ flex: 1 }}>{children}</View>
     </View>
+  );
+}
+
+function MiniBtn({ icon, label, onPress, color = colors.primary }) {
+  return (
+    <Pressable onPress={onPress} hitSlop={6} style={({ pressed }) => [styles.miniBtn, label && { paddingHorizontal: 10 }, pressed && { opacity: 0.6 }]}>
+      <Ionicons name={icon} size={17} color={color} />
+      {label && <Text style={[styles.miniBtnText, { color }]}>{label}</Text>}
+    </Pressable>
   );
 }
 
@@ -299,6 +494,34 @@ const styles = StyleSheet.create({
   okBtn: { alignSelf: 'flex-end', paddingHorizontal: 18, paddingVertical: 8, backgroundColor: colors.primary, borderRadius: 10 },
   okText: { color: '#fff', ...font(800) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  inlineRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  miniBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, height: 36, minWidth: 36, paddingHorizontal: 8,
+    borderRadius: 10, backgroundColor: colors.primarySoft, justifyContent: 'center',
+  },
+  miniBtnText: { ...font(700), fontSize: 13 },
+  noteLink: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '100%',
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, backgroundColor: colors.primarySoft,
+  },
+  noteLinkText: { ...font(700), fontSize: 12, color: colors.primary },
+  linkRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 10 },
+  rowBorder: { borderTopWidth: 1, borderTopColor: colors.border },
+  linkMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  linkIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  linkTitle: { ...font(700), fontSize: 15, color: colors.text },
+  linkUrl: { ...font(400), fontSize: 12, color: colors.primary, marginTop: 1 },
+  addBox: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 2 },
+  addBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 42, borderRadius: 12,
+    backgroundColor: colors.primary, marginBottom: 10,
+  },
+  addBtnText: { ...font(800), fontSize: 14, color: '#fff' },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  stepCheck: { width: 26, height: 26, borderRadius: 8, borderWidth: 2, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  stepCheckOn: { backgroundColor: colors.success, borderColor: colors.success },
+  stepText: { ...font(600), flex: 1, fontSize: 15, color: colors.text },
+  stepDone: { textDecorationLine: 'line-through', color: colors.faint },
   doneBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderRadius: 18, marginBottom: 14,
     backgroundColor: colors.primarySoft, borderWidth: 1.5, borderColor: colors.primary,

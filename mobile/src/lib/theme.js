@@ -18,13 +18,21 @@ export const colors = {
 
 export const gradient = ['#4F46E5', '#7C3AED'];
 
+/** Tipos de actividad. El orden es el que se muestra al elegir. */
 export const CATEGORIES = {
+  revision: { label: 'Revisión', icon: 'search', color: '#F97316' },
+  curso: { label: 'Curso', icon: 'school', color: '#EC4899' },
+  analizar: { label: 'Analizar', icon: 'analytics', color: '#14B8A6' },
+  tramite: { label: 'Trámite / Postulación', icon: 'document-text', color: '#2563EB' },
+  entrega: { label: 'Entrega', icon: 'send', color: '#DC2626' },
+  examen: { label: 'Examen', icon: 'create', color: '#B45309' },
+  reunion: { label: 'Reunión / Entrevista', icon: 'people', color: '#0EA5E9' },
+  llamada: { label: 'Llamada', icon: 'call', color: '#65A30D' },
   trabajo: { label: 'Trabajo', icon: 'briefcase', color: '#4F46E5' },
-  reunion: { label: 'Reunión', icon: 'people', color: '#0EA5E9' },
-  personal: { label: 'Personal', icon: 'person', color: '#8B5CF6' },
+  estudio: { label: 'Estudio', icon: 'book', color: '#C026D3' },
+  pago: { label: 'Pago', icon: 'card', color: '#F59E0B' },
   salud: { label: 'Salud', icon: 'medkit', color: '#10B981' },
-  pago: { label: 'Pagos', icon: 'card', color: '#F59E0B' },
-  estudio: { label: 'Estudio', icon: 'school', color: '#EC4899' },
+  personal: { label: 'Personal', icon: 'person', color: '#8B5CF6' },
   otro: { label: 'Otro', icon: 'ellipsis-horizontal-circle', color: '#64748B' },
 };
 

@@ -92,6 +92,7 @@ export function AgendaProvider({ children }) {
     },
     toggleDone: async (id, date) => upsertLocal(await api.toggle(id, date)),
     markDone: async (id, date) => upsertLocal(await api.setDone(id, date)),
+    setChecklist: async (id, checklist) => upsertLocal(await api.setChecklist(id, checklist)),
     reschedule: () => rescheduleAll(eventsRef.current),
   };
 

@@ -6,7 +6,7 @@ import { Chip, Empty, EventCard, Fab, SectionTitle } from '../../components/ui';
 import { useAgenda } from '../../lib/store';
 import { allOccurrences } from '../../lib/recurrence';
 import { addDays, relativeDay, startOfDay } from '../../lib/dates';
-import { colors, shadow, font } from '../../lib/theme';
+import { CATEGORIES, colors, shadow, font } from '../../lib/theme';
 
 const FILTERS = [
   { key: 'pending', label: 'Pendientes', icon: 'ellipse-outline' },
@@ -18,6 +18,7 @@ const FILTERS = [
 export default function Tasks() {
   const { events, syncing, refresh } = useAgenda();
   const [filter, setFilter] = useState('pending');
+  const [type, setType] = useState(null);
   const [q, setQ] = useState('');
 
   const groups = useMemo(() => {
@@ -28,7 +29,8 @@ export default function Tasks() {
       if (filter === 'done' && !o.done) return false;
       if (filter === 'high' && (o.event.priority !== 'alta' || o.done)) return false;
       if (filter === 'all' && o.start < today && o.done) return false;
-      if (term) return `${o.event.title} ${o.event.description} ${o.event.location}`.toLowerCase().includes(term);
+      if (type && o.event.category !== type) return false;
+      if (term) return `${o.event.title} ${o.event.description} ${o.event.location} ${o.event.phone || ''} ${(o.event.links || []).map((l) => l.label + ' ' + l.url).join(' ')} ${(o.event.checklist || []).map((x) => x.text).join(' ')}`.toLowerCase().includes(term);
       return true;
     });
     if (filter === 'done') list.reverse();
@@ -40,7 +42,7 @@ export default function Tasks() {
       else out.push({ label, items: [o] });
     }
     return out;
-  }, [events, filter, q]);
+  }, [events, filter, q, type]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -66,6 +68,14 @@ export default function Tasks() {
           {FILTERS.map((f) => (
             <Chip key={f.key} label={f.label} icon={f.icon} active={filter === f.key} onPress={() => setFilter(f.key)} />
           ))}
+        </ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.filters, { paddingTop: 10 }]}>
+          <Chip label="Todos los tipos" icon="apps" active={!type} onPress={() => setType(null)} color={colors.text} />
+          {Object.entries(CATEGORIES)
+            .filter(([k]) => events.some((e) => e.category === k))
+            .map(([k, c]) => (
+              <Chip key={k} label={c.label} icon={c.icon} color={c.color} active={type === k} onPress={() => setType(type === k ? null : k)} />
+            ))}
         </ScrollView>
         <View style={{ paddingHorizontal: 16 }}>
           {groups.length ? (

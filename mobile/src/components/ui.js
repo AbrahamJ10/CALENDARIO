@@ -37,14 +37,23 @@ export function EventCard({ occ, showDate = false, dateLabel }) {
       <View style={{ flex: 1 }}>
         <Text numberOfLines={1} style={[styles.title, done && styles.doneText]}>{event.title}</Text>
         <View style={styles.metaRow}>
-          <View style={[styles.badge, { backgroundColor: cat.color + '18' }]}>
-            <Ionicons name={cat.icon} size={11} color={cat.color} />
-            <Text style={[styles.badgeText, { color: cat.color }]}>{cat.label}</Text>
+          <View style={[styles.badge, { backgroundColor: done ? colors.faint : cat.color }]}>
+            <Ionicons name={cat.icon} size={12} color="#fff" />
+            <Text style={[styles.badgeText, { color: '#fff' }]}>{cat.label}</Text>
           </View>
           <View style={[styles.badge, { backgroundColor: pri.soft }]}>
             <Text style={[styles.badgeText, { color: pri.color }]}>● {pri.label}</Text>
           </View>
           {event.repeat !== 'none' && <Ionicons name="repeat" size={13} color={colors.faint} />}
+          {event.links?.length > 0 && (
+            <View style={styles.meta}><Ionicons name="link" size={12} color={colors.muted} /><Text style={styles.metaText}>{event.links.length}</Text></View>
+          )}
+          {event.checklist?.length > 0 && (
+            <View style={styles.meta}>
+              <Ionicons name="checkbox-outline" size={12} color={colors.muted} />
+              <Text style={styles.metaText}>{event.checklist.filter((c) => c.done).length}/{event.checklist.length}</Text>
+            </View>
+          )}
           {overdue && <Text style={styles.overdue}>Vencida</Text>}
         </View>
         {(showDate || !!event.location) && (
@@ -121,7 +130,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...shadow,
   },
-  stripe: { width: 5, alignSelf: 'stretch', borderRadius: 3, marginRight: 12, marginLeft: 0 },
+  stripe: { width: 6, alignSelf: 'stretch', borderRadius: 3, marginRight: 12, marginLeft: 0 },
   time: { width: 50, alignItems: 'flex-start' },
   timeText: { fontSize: 15, ...font(800), color: colors.text },
   timeSub: { ...font(400), fontSize: 11, color: colors.faint, marginTop: 2 },
@@ -130,6 +139,8 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6, flexWrap: 'wrap' },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
   badgeText: { fontSize: 11, ...font(700) },
+  meta: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  metaText: { ...font(700), fontSize: 11, color: colors.muted },
   overdue: { fontSize: 11, ...font(800), color: colors.danger },
   sub: { ...font(400), fontSize: 12, color: colors.muted, marginTop: 6 },
   check: {

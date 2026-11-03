@@ -39,6 +39,9 @@ async function migrate() {
     -- Dueño de la agenda (nombre normalizado del usuario de la app)
     ALTER TABLE events ADD COLUMN IF NOT EXISTS owner TEXT NOT NULL DEFAULT '';
     CREATE INDEX IF NOT EXISTS events_owner_start_idx ON events (owner, start_at);
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS links JSONB NOT NULL DEFAULT '[]';
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS checklist JSONB NOT NULL DEFAULT '[]';
+    ALTER TABLE events ADD COLUMN IF NOT EXISTS phone TEXT NOT NULL DEFAULT '';
   `);
 }
 
