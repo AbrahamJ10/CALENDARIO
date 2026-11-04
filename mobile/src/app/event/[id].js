@@ -30,7 +30,7 @@ export default function EventScreen() {
   // "Duplicar" abre una actividad nueva con los datos de otra
   const source = existing || (copyOf ? getEvent(copyOf) : null);
 
-  const [form, setForm] = useState(() => source
+  const initialForm = () => source
     ? {
         ...source,
         start: new Date(source.start_at),
@@ -44,7 +44,10 @@ export default function EventScreen() {
         start: defaultStart(date), end: null, all_day: false,
         reminders: [1440, 60, 0], nag_every: 60, repeat: 'none',
         links: [], checklist: [], phone: '',
-      });
+      };
+  const [form, setForm] = useState(initialForm);
+  // Una actividad guardada se abre solo para ver; se edita al tocar "Editar"
+  const [editing, setEditing] = useState(isNew);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const [newStep, setNewStep] = useState('');
   const [saving, setSaving] = useState(false);
@@ -161,11 +164,21 @@ export default function EventScreen() {
       }, isNew ? undefined : id);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       notify(isNew ? 'Actividad agendada' : 'Cambios guardados');
-      router.back();
+      if (isNew) return router.back();
+      setSaving(false);
+      setEditing(false);
     } catch (err) {
       notify(err.message, 'error');
       setSaving(false);
     }
+  };
+
+  const cancelEdit = () => {
+    setForm(initialForm());
+    setNewLink({ url: '', label: '' });
+    setNewStep('');
+    setIosPicker(null);
+    setEditing(false);
   };
 
   const onDelete = () => {
@@ -197,14 +210,15 @@ export default function EventScreen() {
     }
   };
 
-  return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={[styles.top, { paddingTop: Platform.OS === 'ios' ? 14 : insets.top + 8 }]}>
-        <Pressable onPress={() => router.back()} hitSlop={10} style={styles.iconBtn}>
-          <Ionicons name="close" size={24} color={colors.text} />
-        </Pressable>
-        <Text style={styles.topTitle}>{isNew ? (copyOf ? 'Duplicar actividad' : 'Nueva actividad') : 'Editar actividad'}</Text>
-        {!isNew ? (
+  const topBar = (
+    <View style={[styles.top, { paddingTop: Platform.OS === 'ios' ? 14 : insets.top + 8 }]}>
+      <Pressable onPress={editing && !isNew ? cancelEdit : () => router.back()} hitSlop={10} style={styles.iconBtn}>
+        <Ionicons name={editing && !isNew ? 'arrow-back' : 'close'} size={24} color={colors.text} />
+      </Pressable>
+      <Text style={styles.topTitle}>
+        {isNew ? (copyOf ? 'Duplicar actividad' : 'Nueva actividad') : editing ? 'Editar actividad' : 'Detalle'}
+      </Text>
+      {!editing ? (
           <View style={{ flexDirection: 'row' }}>
             <Pressable onPress={() => shareEvent(existing, date ? fromKey(date) : new Date(existing.start_at))} hitSlop={6} style={styles.iconBtn}>
               <Ionicons name="share-social-outline" size={22} color={colors.primary} />
@@ -216,20 +230,169 @@ export default function EventScreen() {
               <Ionicons name="trash-outline" size={22} color={colors.danger} />
             </Pressable>
           </View>
-        ) : <View style={styles.iconBtn} />}
+      ) : <View style={styles.iconBtn} />}
+    </View>
+  );
+
+  if (!editing) {
+    const cat = CATEGORIES[form.category] || CATEGORIES.otro;
+    const prio = PRIORITIES[form.priority] || PRIORITIES.media;
+    // Si se abrió una repetición concreta, se muestra su fecha
+    const when = new Date(form.start);
+    if (date) {
+      const d = fromKey(date);
+      when.setFullYear(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    const reminders = REMINDER_OPTIONS.filter((o) => form.reminders.includes(o.value)).map((o) => o.label);
+    const nag = NAG_OPTIONS.find((o) => o.value === form.nag_every);
+    const repeat = REPEAT_OPTIONS.find((o) => o.value === form.repeat);
+    const noteLinks = splitLinks(form.description).filter((p) => p.url);
+
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        {topBar}
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 130 }}>
+          {date && (
+            <Pressable onPress={onToggleDone} style={[styles.doneBanner, occDone && { backgroundColor: colors.successSoft, borderColor: colors.success }]}>
+              <Ionicons name={occDone ? 'checkmark-circle' : 'ellipse-outline'} size={26} color={occDone ? colors.success : colors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.doneTitle}>{occDone ? 'Realizada' : 'Marcar como realizada'}</Text>
+                <Text style={styles.doneSub}>{relativeDay(fromKey(date))}{occDone ? ' · toca para desmarcar' : ' · detiene los avisos'}</Text>
+              </View>
+            </Pressable>
+          )}
+
+          <View style={styles.card}>
+            <View style={styles.chips}>
+              <View style={[styles.badge, { backgroundColor: cat.color }]}>
+                <Ionicons name={cat.icon} size={14} color="#fff" />
+                <Text style={styles.badgeText}>{cat.label}</Text>
+              </View>
+              <View style={[styles.badge, { backgroundColor: prio.soft }]}>
+                <Ionicons name="flag" size={13} color={prio.color} />
+                <Text style={[styles.badgeText, { color: prio.color }]}>Prioridad {prio.label.toLowerCase()}</Text>
+              </View>
+            </View>
+            <Text style={styles.viewTitle} selectable>{form.title}</Text>
+            <View style={styles.viewRow}>
+              <Ionicons name="calendar-outline" size={19} color={colors.primary} />
+              <Text style={styles.viewText}>
+                {relativeDay(when)} · {formatShortDate(when)}
+              </Text>
+            </View>
+            <View style={styles.viewRow}>
+              <Ionicons name="time-outline" size={19} color={colors.primary} />
+              <Text style={styles.viewText}>
+                {form.all_day ? 'Todo el día' : `${formatTime(form.start)}${form.end ? ` – ${formatTime(form.end)}` : ''}`}
+              </Text>
+            </View>
+            {form.repeat !== 'none' && (
+              <View style={styles.viewRow}>
+                <Ionicons name="repeat" size={19} color={colors.primary} />
+                <Text style={styles.viewText}>{repeat?.label}</Text>
+              </View>
+            )}
+          </View>
+
+          {(!!form.location.trim() || !!form.phone.trim() || !!form.description.trim()) && (
+            <View style={[styles.card, { marginTop: 14 }]}>
+              {!!form.location.trim() && (
+                <View style={styles.viewRow}>
+                  <Ionicons name="location-outline" size={19} color={colors.muted} />
+                  <Text style={[styles.viewText, { flex: 1 }]} selectable>{form.location}</Text>
+                  <MiniBtn icon="map" label="Mapa" onPress={() => openMaps(form.location)} />
+                </View>
+              )}
+              {!!form.phone.trim() && (
+                <View style={styles.viewRow}>
+                  <Ionicons name="call-outline" size={19} color={colors.muted} />
+                  <Text style={[styles.viewText, { flex: 1 }]} selectable>{form.phone}</Text>
+                  <MiniBtn icon="call" onPress={() => callPhone(form.phone)} />
+                  <MiniBtn icon="logo-whatsapp" color="#16A34A" onPress={() => openWhatsApp(form.phone)} />
+                </View>
+              )}
+              {!!form.description.trim() && (
+                <View style={[styles.viewRow, { alignItems: 'flex-start' }]}>
+                  <Ionicons name="document-text-outline" size={19} color={colors.muted} style={{ marginTop: 2 }} />
+                  <Text style={[styles.viewText, { flex: 1, ...font(400) }]} selectable>
+                    {splitLinks(form.description).map((p, i) => (p.url
+                      ? <Text key={i} style={styles.inlineLink} onPress={() => open(p.url)} onLongPress={() => copy(p.url)}>{p.text}</Text>
+                      : p.text))}
+                  </Text>
+                </View>
+              )}
+              {noteLinks.length > 0 && <Text style={[styles.hint, { marginTop: 4, marginBottom: 0 }]}>Toca un enlace para abrirlo; mantenlo presionado para copiarlo.</Text>}
+            </View>
+          )}
+
+          {form.links.length > 0 && (
+            <>
+              <Text style={styles.label}>🔗 Enlaces</Text>
+              <View style={styles.card}>
+                {form.links.map((l, i) => (
+                  <View key={i} style={[styles.linkRow, i > 0 && styles.rowBorder]}>
+                    <Pressable onPress={() => open(l.url)} style={styles.linkMain}>
+                      <View style={styles.linkIcon}><Ionicons name="globe-outline" size={18} color={colors.primary} /></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.linkTitle} numberOfLines={1}>{l.label || hostOf(l.url)}</Text>
+                        <Text style={styles.linkUrl} numberOfLines={1}>{l.url}</Text>
+                      </View>
+                    </Pressable>
+                    <MiniBtn icon="open-outline" label="Abrir" onPress={() => open(l.url)} />
+                    <MiniBtn icon="copy-outline" onPress={() => copy(l.url)} />
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
+          {form.checklist.length > 0 && (
+            <>
+              <Text style={styles.label}>☑️ Lista de pasos</Text>
+              <View style={styles.card}>
+                <Text style={styles.hint}>{form.checklist.filter((c) => c.done).length} de {form.checklist.length} pasos hechos · toca para marcar</Text>
+                {form.checklist.map((c, i) => (
+                  <Pressable key={i} onPress={() => toggleStep(i)} style={styles.stepRow}>
+                    <View style={[styles.stepCheck, c.done && styles.stepCheckOn]}>
+                      {c.done && <Ionicons name="checkmark" size={16} color="#fff" />}
+                    </View>
+                    <Text style={[styles.stepText, c.done && styles.stepDone]}>{c.text}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
+
+          <Text style={styles.label}>🔔 Avisos</Text>
+          <View style={styles.card}>
+            <View style={styles.viewRow}>
+              <Ionicons name="notifications-outline" size={19} color={colors.primary} />
+              <Text style={[styles.viewText, { flex: 1 }]}>{reminders.length ? reminders.join(' · ') : 'Sin recordatorios'}</Text>
+            </View>
+            <View style={styles.viewRow}>
+              <Ionicons name="alarm-outline" size={19} color={colors.warning} />
+              <Text style={[styles.viewText, { flex: 1 }]}>
+                {form.nag_every ? `Insiste ${nag?.label.toLowerCase() || `cada ${form.nag_every} min`} hasta que la marques` : 'No insiste después de la hora'}
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+
+        <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+          <Pressable onPress={() => setEditing(true)} style={({ pressed }) => [styles.saveBtn, pressed && { opacity: 0.8 }]}>
+            <Ionicons name="create-outline" size={20} color="#fff" />
+            <Text style={styles.saveText}>Editar</Text>
+          </Pressable>
+        </View>
       </View>
+    );
+  }
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      {topBar}
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 130 }} keyboardShouldPersistTaps="handled">
-        {!isNew && date && (
-          <Pressable onPress={onToggleDone} style={[styles.doneBanner, occDone && { backgroundColor: colors.successSoft, borderColor: colors.success }]}>
-            <Ionicons name={occDone ? 'checkmark-circle' : 'ellipse-outline'} size={26} color={occDone ? colors.success : colors.primary} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.doneTitle}>{occDone ? 'Realizada' : 'Marcar como realizada'}</Text>
-              <Text style={styles.doneSub}>{relativeDay(fromKey(date))}{occDone ? ' · toca para desmarcar' : ' · detiene los avisos'}</Text>
-            </View>
-          </Pressable>
-        )}
-
         <View style={styles.card}>
           <TextInput
             value={form.title}
@@ -475,6 +638,12 @@ const styles = StyleSheet.create({
   topTitle: { flex: 1, textAlign: 'center', fontSize: 17, ...font(800), color: colors.text },
   iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   card: { backgroundColor: colors.card, borderRadius: 20, padding: 16, ...shadow },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  badgeText: { ...font(800), fontSize: 12, color: '#fff' },
+  viewTitle: { fontSize: 24, ...font(800), color: colors.text, marginTop: 12, marginBottom: 6, lineHeight: 30 },
+  viewRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 7 },
+  viewText: { ...font(600), fontSize: 15, color: colors.text, lineHeight: 21 },
+  inlineLink: { ...font(700), color: colors.primary, textDecorationLine: 'underline' },
   titleInput: { fontSize: 22, ...font(800), color: colors.text, paddingVertical: 4 },
   divider: { height: 1, backgroundColor: colors.border, marginVertical: 10 },
   field: { flexDirection: 'row', gap: 10 },

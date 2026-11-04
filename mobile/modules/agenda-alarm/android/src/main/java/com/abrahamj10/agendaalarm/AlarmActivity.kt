@@ -26,6 +26,7 @@ class AlarmActivity : Activity() {
   companion object {
     const val ACTION_SHOW = "com.abrahamj10.agendaalarm.SHOW"
     const val ACTION_DONE = "com.abrahamj10.agendaalarm.DONE"
+    const val ACTION_OPEN = "com.abrahamj10.agendaalarm.OPEN"
 
     fun intent(ctx: Context, a: Alarm, action: String?): Intent =
       Intent(ctx, AlarmActivity::class.java)
@@ -51,6 +52,7 @@ class AlarmActivity : Activity() {
     val a = Alarm.fromBundle(intent.extras) ?: return finish()
     alarm = a
     if (intent.action == ACTION_DONE) return done(a)
+    if (intent.action == ACTION_OPEN) return openDetails(a)
     showOverLockScreen()
     setContentView(buildUi(a))
   }
@@ -71,6 +73,16 @@ class AlarmActivity : Activity() {
     AlarmNotifier.dismiss(this, a.id)
     val uri = Uri.parse("agendapro://done?eventId=${Uri.encode(a.eventId)}&date=${Uri.encode(a.date)}")
     startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    finish()
+  }
+
+  /** Abre directamente el detalle de lo agendado en la app (agendapro://open). */
+  private fun openDetails(a: Alarm) {
+    AlarmNotifier.dismiss(this, a.id)
+    if (a.eventId.isNotEmpty()) {
+      val uri = Uri.parse("agendapro://open?eventId=${Uri.encode(a.eventId)}&date=${Uri.encode(a.date)}")
+      startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage(packageName).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     finish()
   }
 
@@ -155,6 +167,9 @@ class AlarmActivity : Activity() {
 
     val full = { LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) } }
     root.addView(button("✅  Ya lo realicé", 0xFF10B981.toInt(), Color.WHITE) { done(a) }, full())
+    if (a.eventId.isNotEmpty()) {
+      root.addView(button("📋  Ver detalles", 0x33FFFFFF, Color.WHITE) { openDetails(a) }, full())
+    }
     root.addView(button("⏰  Posponer 10 min", Color.WHITE, 0xFF4F46E5.toInt()) { snooze(a) }, full())
     root.addView(text("Silenciar", 16f, bold = true, alpha = 0.85f).apply {
       setPadding(0, dp(20), 0, dp(4))

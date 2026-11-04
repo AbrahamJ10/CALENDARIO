@@ -55,6 +55,7 @@ object AlarmNotifier {
     val flags = PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     val fullScreen = PendingIntent.getActivity(ctx, a.id, AlarmActivity.intent(ctx, a, null), flags)
     val done = PendingIntent.getActivity(ctx, a.id + 1_000_000, AlarmActivity.intent(ctx, a, AlarmActivity.ACTION_DONE), flags)
+    val details = PendingIntent.getActivity(ctx, a.id + 3_000_000, AlarmActivity.intent(ctx, a, AlarmActivity.ACTION_OPEN), flags)
     val snooze = PendingIntent.getBroadcast(
       ctx, a.id + 2_000_000,
       Intent(ctx, ActionReceiver::class.java).setAction(ActionReceiver.ACTION_SNOOZE).putExtras(a.toBundle()),
@@ -76,6 +77,7 @@ object AlarmNotifier {
       .setContentIntent(fullScreen)
       .addAction(0, "✅ Realizado", done)
       .addAction(0, "⏰ 10 min", snooze)
+      .apply { if (a.eventId.isNotEmpty()) addAction(0, "📋 Ver", details) }
       .setTimeoutAfter(RING_TIMEOUT_MS)
       .setSound(alarmSound(), AudioManager.STREAM_ALARM)
       .setVibrate(VIBRATION)
